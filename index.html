@@ -105,6 +105,36 @@
         .btn-primary:hover {
             background-color: #2980b9;
         }
+        .api-info {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            border-left: 4px solid #3498db;
+        }
+        .api-info h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .api-status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .api-status.success {
+            color: #27ae60;
+        }
+        .api-status.error {
+            color: #c62828;
+        }
+        .cors-warning {
+            background-color: #fff8e1;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            border-left: 4px solid #f39c12;
+            font-size: 14px;
+            display: none;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 </head>
@@ -115,13 +145,23 @@
         <div id="error" class="error" style="display: none;"></div>
         
         <div class="controls">
-            <button id="jarjestaNouseva" class="btn btn-primary">Järjestä nousevasti</button>
-            <button id="jarjestaLaskeva" class="btn">Järjestä laskevasti</button>
+            <button id="jarjestaNouseva" class="btn">Järjestä nousevasti</button>
+            <button id="jarjestaLaskeva" class="btn btn-primary">Järjestä laskevasti</button>
             <button id="jarjestaAakkos" class="btn">Järjestä aakkosjärjestykseen</button>
         </div>
         
         <div class="chart-container">
             <canvas id="tyollisyysChart"></canvas>
+        </div>
+        
+        <div id="corsWarning" class="cors-warning">
+            <strong>Huomio:</strong> API-kutsu ei välttämättä toimi GitHub Pages -ympäristössä CORS-rajoitusten vuoksi. 
+            Jos kaavio ei näy, syynä voi olla CORS-rajoitukset. Tässä tapauksessa sovellus käyttää esimerkkidataa.
+        </div>
+        
+        <div class="api-info">
+            <h3>API-kutsun tila</h3>
+            <div id="apiStatus">Odotetaan API-kutsun tulosta...</div>
         </div>
         
         <div class="legend">
@@ -162,6 +202,22 @@
             "SS": "Yhteensä"
         };
 
+        // Esimerkkidata varalla jos API-kutsu epäonnistuu
+        const esimerkkiData = {
+            "value": [75.4, 91.5, 82.6, 87.2, 88.1, 85.3, 92.7, 88.9, 86.2, 91.0, 87.4, 70.0, 87.4],
+            "dimension": {
+                "Koulutusala": {
+                    "category": {
+                        "index": {
+                            "00": 0, "01": 1, "02": 2, "03": 3, "04": 4, "05": 5, "06": 6,
+                            "07": 7, "08": 8, "09": 9, "10": 10, "99": 11, "SS": 12
+                        },
+                        "label": koulutusalat
+                    }
+                }
+            }
+        };
+
         // Täytä koulutusalojen selitykset taulukkoon
         const taulukko = document.querySelector('#koulutusalaSelitykset tbody');
         for (const [koodi, selitys] of Object.entries(koulutusalat)) {
@@ -182,6 +238,9 @@
         
         // Alkuperäisen datan säilytys
         let alkuperainenData;
+        
+        // CORS-välityspalvelin (voit käyttää tätä jos kohtaat CORS-virheitä)
+        // const corsProxy = 'https://api.allorigins.win/raw?url=';
 
         // Funktio datan hakemiseen Tilastokeskukselta
         async function haeTilastokeskuksenData() {
@@ -219,34 +278,47 @@
             };
 
             try {
-                // Emuloidaan datan hakua (todellisessa sovelluksessa käyttäisit fetch-kutsua)
-                // Koska tämä ei oikeasti hae dataa ulkoisesta lähteestä, käytämme esimerkkidataa
-                // Todellisessa sovelluksessa käyttäisit:
-                // const response = await fetch(url, {
-                //     method: 'POST',
-                //     headers: { 'Content-Type': 'application/json' },
-                //     body: JSON.stringify(queryData)
-                // });
+                // Todellinen API-kutsu Tilastokeskukseen
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(queryData)
+                });
 
-                // Esimerkki-vastaus joka mallintaa Tilastokeskuksen vastausmuotoa
-                const esimerkkiData = {
-                    "value": [75.4, 91.5, 82.6, 87.2, 88.1, 85.3, 92.7, 88.9, 86.2, 91.0, 87.4, 70.0, 87.4],
-                    "dimension": {
-                        "Koulutusala": {
-                            "category": {
-                                "index": {
-                                    "00": 0, "01": 1, "02": 2, "03": 3, "04": 4, "05": 5, "06": 6,
-                                    "07": 7, "08": 8, "09": 9, "10": 10, "99": 11, "SS": 12
-                                },
-                                "label": koulutusalat
-                            }
-                        }
-                    }
-                };
+                if (!response.ok) {
+                    throw new Error(`HTTP-virhe: ${response.status}`);
+                }
 
-                return esimerkkiData;
+                const data = await response.json();
+                
+                // Päivitä API-kutsun tila
+                document.getElementById('apiStatus').className = 'api-status success';
+                document.getElementById('apiStatus').textContent = 'API-kutsu onnistui! Käytetään todellista dataa.';
+                
+                // Tarkista, että data on oikeassa muodossa
+                if (!data.value || !data.dimension || !data.dimension.Koulutusala) {
+                    throw new Error('Datan muoto on virheellinen');
+                }
+
+                return data;
             } catch (error) {
-                throw new Error("Datan hakeminen epäonnistui: " + error.message);
+                console.error('API-virhe:', error);
+                
+                // Näytä CORS-varoitus jos virhe liittyy CORS-rajoituksiin
+                if (error.message.includes('CORS') || error.name === 'TypeError') {
+                    document.getElementById('corsWarning').style.display = 'block';
+                }
+                
+                // Päivitä API-kutsun tila
+                document.getElementById('apiStatus').className = 'api-status error';
+                document.getElementById('apiStatus').textContent = 
+                    `API-kutsu epäonnistui: ${error.message}. Käytetään esimerkkidataa.`;
+                
+                // Käytä esimerkkidataa jos API-kutsu epäonnistuu
+                return esimerkkiData;
             }
         }
 
